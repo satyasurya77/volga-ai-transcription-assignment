@@ -86,3 +86,34 @@ def test_chunk_timestamp_offset(monkeypatch):
 
 def test_unknown_job():
     assert client.get("/jobs/nonexistent-id").status_code == 404
+
+
+
+def test_duplicate_readme_at_chunk_boundary():
+    """Actual reported boundary case: keep the first README mention only."""
+    segments = [
+        {"start": 55.97, "end": 60.77, "text": "of my following readme.md"},
+        {"start": 59.0, "end": 61.0, "text": "readme.md"},
+        {"start": 62.02, "end": 64.54, "text": "So, yeah, let's see how this works"},
+    ]
+    cleaned = main.remove_boundary_duplicates(segments)
+    assert len(cleaned) == 2
+    assert cleaned[0]["text"] == "of my following readme.md"
+    assert cleaned[1]["start"] == 62.02
+
+
+def test_boundary_overlap_keeps_different_words():
+    """Overlapping timestamps are not, by themselves, evidence of repetition."""
+    segments = [
+        {"start": 58.0, "end": 60.8, "text": "we installed FFmpeg"},
+        {"start": 59.2, "end": 62.0, "text": "and FFprobe"},
+    ]
+    assert main.remove_boundary_duplicates(segments) == segments
+
+
+def test_exact_repeated_segment_across_boundary():
+    segments = [
+        {"start": 58.8, "end": 60.5, "text": "README dot MD"},
+        {"start": 59.2, "end": 61.2, "text": "README dot MD"},
+    ]
+    assert len(main.remove_boundary_duplicates(segments)) == 1
