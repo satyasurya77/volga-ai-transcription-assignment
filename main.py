@@ -94,6 +94,35 @@ def extract_chunk(source: Path, destination: Path, start: float, duration: float
     ])
 
 
+def remove_boundary_duplicates(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop duplicate segments created when adjacent audio chunks overlap.
+
+    This handles repeated segment text near a chunk boundary (e.g., 'readme.md'
+    twice). It is intentionally conservative: uncertain partial overlaps remain
+    untouched rather than deleting potentially real speech.
+    """
+    import re
+
+    def normalize(value: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", value.casefold())
+
+    cleaned: list[dict[str, Any]] = []
+    for segment in sorted(segments, key=lambda item: (item["start"], item["end"])):
+        if cleaned:
+            previous = cleaned[-1]
+            current_text = normalize(segment["text"])
+            previous_text = normalize(previous["text"])
+            overlapping = segment["start"] < previous["end"]
+            repeated = bool(current_text) and (
+                current_text == previous_text or previous_text.endswith(current_text)
+            )
+            # Nearby duplicate segments may differ slightly in model timestamps.
+            if overlapping and repeated:
+                continue
+        cleaned.append(segment)
+    return cleaned
+
+
 def transcribe_file(path: Path, filename: str, duration: float) -> dict[str, Any]:
     """Chunked inference with absolute timestamps and heuristic overlap removal."""
     model = get_model()
@@ -136,7 +165,7 @@ def transcribe_file(path: Path, filename: str, duration: float) -> dict[str, Any
                         })
                 position += CHUNK_SECONDS
 
-    all_segments.sort(key=lambda segment: (segment["start"], segment["end"]))
+    all_segments = remove_boundary_duplicates(all_segments)
     return Transcript(
         filename=filename,
         language=language,
